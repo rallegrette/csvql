@@ -1,0 +1,16 @@
+id,name,department,salary,age,active
+1,Alice Chen,Engineering,125000,32,true
+2,Bob Martinez,Engineering,118000,28,true
+3,Carol White,Engineering,95000,35,true
+4,David Kim,Product,110000,30,true
+5,Eve Johnson,Product,98000,27,true
+6,Frank Lee,Product,87000,33,false
+7,Grace Patel,Marketing,82000,29,true
+8,Henry Wilson,Marketing,76000,31,true
+9,Irene Davis,Marketing,71000,26,true
+10,Jack Brown,Engineering,112000,40,true
+11,Karen Taylor,Product,95000,38,true
+12,Leo Garcia,Marketing,79000,34,true
+13,Mia Robinson,Engineering,130000,45,true
+14,Noah Clark,Product,102000,29,false
+15,Olivia Moore,Marketing,68000,24,true
