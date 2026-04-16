@@ -385,7 +385,7 @@ impl Lexer {
     fn read_identifier_or_keyword(&mut self) -> Result<Token> {
         let start = self.pos;
         while let Some(ch) = self.peek() {
-            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' || ch == '/' || ch == '-' {
                 self.advance();
             } else {
                 break;
