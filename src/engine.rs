@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::aggregator::create_aggregator;
 use crate::ast::*;
@@ -6,9 +6,16 @@ use crate::error::{CsvqlError, Result};
 use crate::loader::load_csv;
 use crate::types::{Row, Table, Value};
 
+fn resolve_table_ref(source: &TableRef) -> Result<Table> {
+    match source {
+        TableRef::File(path) => load_csv(path),
+        TableRef::Subquery(sub_stmt) => execute(sub_stmt),
+    }
+}
+
 /// Execute a parsed SELECT statement and return the resulting table.
 pub fn execute(stmt: &SelectStatement) -> Result<Table> {
-    let mut base_table = load_csv(&stmt.from.table)?;
+    let mut base_table = resolve_table_ref(&stmt.from.source)?;
 
     if let Some(alias) = &stmt.from.alias {
         base_table.name = alias.clone();
@@ -243,13 +250,15 @@ fn build_groups(
 /// Evaluate an expression that may contain aggregate functions.
 fn eval_aggregate_expr(expr: &Expr, group_rows: &[Row], columns: &[String]) -> Result<Value> {
     match expr {
-        Expr::Function { name, args, .. } if is_aggregate_function(name) => {
+        Expr::Function { name, args, distinct } if is_aggregate_function(name) => {
             let is_star = args.first().map(|a| matches!(a, Expr::Star)).unwrap_or(false);
             let mut agg = create_aggregator(name, is_star).ok_or_else(|| {
                 CsvqlError::AggregateError {
                     function: name.clone(),
                 }
             })?;
+
+            let mut seen: HashSet<String> = HashSet::new();
 
             for row in group_rows {
                 let val = if is_star {
@@ -259,6 +268,14 @@ fn eval_aggregate_expr(expr: &Expr, group_rows: &[Row], columns: &[String]) -> R
                 } else {
                     Value::Integer(1)
                 };
+
+                if *distinct && !is_star {
+                    let key = format!("{val}");
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                }
+
                 agg.accumulate(&val);
             }
 
@@ -299,6 +316,7 @@ fn contains_aggregate(expr: &Expr) -> bool {
         Expr::Function { name, .. } => is_aggregate_function(name),
         Expr::BinaryOp { left, right, .. } => contains_aggregate(left) || contains_aggregate(right),
         Expr::UnaryOp { operand, .. } => contains_aggregate(operand),
+        Expr::Subquery(_) => false,
         _ => false,
     }
 }
@@ -474,6 +492,16 @@ fn eval_expr(expr: &Expr, row: &Row, columns: &[String]) -> Result<Value> {
             negated,
         } => {
             let val = eval_expr(expr, row, columns)?;
+            // Handle IN (SELECT ...) — single subquery element
+            if list.len() == 1 {
+                if let Expr::Subquery(sub) = &list[0] {
+                    let sub_result = execute(sub)?;
+                    let found = sub_result.rows.iter().any(|r| {
+                        r.values.first().map(|v| *v == val).unwrap_or(false)
+                    });
+                    return Ok(Value::Boolean(if *negated { !found } else { found }));
+                }
+            }
             let found = list
                 .iter()
                 .any(|item| eval_expr(item, row, columns).map(|v| v == val).unwrap_or(false));
@@ -505,6 +533,15 @@ fn eval_expr(expr: &Expr, row: &Row, columns: &[String]) -> Result<Value> {
                 _ => false,
             };
             Ok(Value::Boolean(if *negated { !matched } else { matched }))
+        }
+
+        Expr::Subquery(sub_stmt) => {
+            let sub_result = execute(sub_stmt)?;
+            Ok(sub_result
+                .rows
+                .first()
+                .and_then(|r| r.values.first().cloned())
+                .unwrap_or(Value::Null))
         }
 
         Expr::CaseExpr {
@@ -794,6 +831,8 @@ pub fn expr_display_name(expr: &Expr) -> String {
         Expr::IntegerLiteral(n) => n.to_string(),
         Expr::FloatLiteral(n) => n.to_string(),
         Expr::StringLiteral(s) => format!("'{s}'"),
+        Expr::BooleanLiteral(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
+        Expr::Null => "NULL".to_string(),
         Expr::BinaryOp { left, op, right } => {
             format!(
                 "{} {} {}",
@@ -802,6 +841,14 @@ pub fn expr_display_name(expr: &Expr) -> String {
                 expr_display_name(right)
             )
         }
+        Expr::UnaryOp { op, operand } => {
+            let op_str = match op {
+                UnaryOperator::Not => "NOT",
+                UnaryOperator::Neg => "-",
+            };
+            format!("{op_str} {}", expr_display_name(operand))
+        }
+        Expr::Subquery(_) => "(subquery)".to_string(),
         _ => "?".to_string(),
     }
 }

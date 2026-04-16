@@ -185,9 +185,41 @@ impl Parser {
     // ── FROM ─────────────────────────────────────────────────
 
     fn parse_from(&mut self) -> Result<FromClause> {
+        if self.check(&Token::LParen) {
+            self.advance();
+            if self.check(&Token::Select) {
+                let sub = self.parse_select()?;
+                self.expect(Token::RParen)?;
+                let alias = if self.match_token(&Token::As) {
+                    Some(self.expect_identifier()?)
+                } else if let Token::Identifier(s) = self.peek() {
+                    let upper = s.to_uppercase();
+                    if !matches!(
+                        upper.as_str(),
+                        "WHERE" | "GROUP" | "ORDER" | "HAVING" | "LIMIT" | "OFFSET"
+                            | "JOIN" | "INNER" | "LEFT" | "ON"
+                    ) {
+                        Some(self.expect_identifier()?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                return Ok(FromClause {
+                    source: TableRef::Subquery(Box::new(sub)),
+                    alias,
+                });
+            }
+            self.pos -= 1;
+        }
+
         let table = self.expect_identifier()?;
         let alias = self.parse_optional_alias()?;
-        Ok(FromClause { table, alias })
+        Ok(FromClause {
+            source: TableRef::File(table),
+            alias,
+        })
     }
 
     fn parse_optional_alias(&mut self) -> Result<Option<String>> {
@@ -356,6 +388,15 @@ impl Parser {
 
         if self.match_token(&Token::In) {
             self.expect(Token::LParen)?;
+            if self.check(&Token::Select) {
+                let sub = self.parse_select()?;
+                self.expect(Token::RParen)?;
+                return Ok(Expr::InList {
+                    expr: Box::new(left),
+                    list: vec![Expr::Subquery(Box::new(sub))],
+                    negated: negated_prefix,
+                });
+            }
             let list = self.parse_expr_list()?;
             self.expect(Token::RParen)?;
             return Ok(Expr::InList {
@@ -493,6 +534,11 @@ impl Parser {
             Token::Case => self.parse_case(),
             Token::LParen => {
                 self.advance();
+                if self.check(&Token::Select) {
+                    let sub = self.parse_select()?;
+                    self.expect(Token::RParen)?;
+                    return Ok(Expr::Subquery(Box::new(sub)));
+                }
                 let expr = self.parse_expr()?;
                 self.expect(Token::RParen)?;
                 Ok(expr)
@@ -598,7 +644,7 @@ mod tests {
     fn test_simple_select() {
         let stmt = parse_sql("SELECT name, age FROM people.csv");
         assert_eq!(stmt.columns.len(), 2);
-        assert_eq!(stmt.from.table, "people.csv");
+        assert_eq!(stmt.from.table_name(), "people.csv");
         assert!(stmt.where_clause.is_none());
     }
 

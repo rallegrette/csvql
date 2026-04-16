@@ -22,9 +22,25 @@ pub enum SelectColumn {
 }
 
 #[derive(Debug, Clone)]
+pub enum TableRef {
+    File(String),
+    Subquery(Box<SelectStatement>),
+}
+
+#[derive(Debug, Clone)]
 pub struct FromClause {
-    pub table: String,
+    pub source: TableRef,
     pub alias: Option<String>,
+}
+
+impl FromClause {
+    #[cfg(test)]
+    pub fn table_name(&self) -> &str {
+        match &self.source {
+            TableRef::File(path) => path,
+            TableRef::Subquery(_) => self.alias.as_deref().unwrap_or("subquery"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -88,7 +104,6 @@ pub enum Expr {
     Function {
         name: String,
         args: Vec<Expr>,
-        #[allow(dead_code)]
         distinct: bool,
     },
 
@@ -126,6 +141,9 @@ pub enum Expr {
         when_clauses: Vec<(Expr, Expr)>,
         else_clause: Option<Box<Expr>>,
     },
+
+    /// A subquery expression: (SELECT ...)
+    Subquery(Box<SelectStatement>),
 
     /// Star (*) — used in COUNT(*)
     Star,
