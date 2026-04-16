@@ -502,4 +502,4 @@ test parser::tests::test_complex_query ... ok
 
 test result: ok. 14 passed; 0 failed; 0 ignored
 ```
-\
+
