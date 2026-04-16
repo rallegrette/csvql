@@ -88,6 +88,7 @@ pub enum Expr {
     Function {
         name: String,
         args: Vec<Expr>,
+        #[allow(dead_code)]
         distinct: bool,
     },
 

@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum CsvqlError {
     #[error("Lexer error at position {position}: {message}")]
     LexerError { position: usize, message: String },

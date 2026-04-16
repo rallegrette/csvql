@@ -10,6 +10,7 @@ pub trait Aggregator: std::fmt::Debug {
     fn finish(&self) -> Value;
 
     /// Create a fresh instance of this aggregator (for use in multiple groups).
+    #[allow(dead_code)]
     fn clone_box(&self) -> Box<dyn Aggregator>;
 }
 
