@@ -55,7 +55,7 @@ pub fn load_csv(path: &str) -> Result<Table> {
 
 /// Infer column types by sampling all rows.
 fn infer_types(headers: &[String], rows: &[Vec<String>]) -> Vec<ColumnType> {
-    let mut types = vec![ColumnType::Integer; headers.len()];
+    let mut types: Vec<Option<ColumnType>> = vec![None; headers.len()];
 
     for row in rows {
         for (i, field) in row.iter().enumerate() {
@@ -64,7 +64,7 @@ fn infer_types(headers: &[String], rows: &[Vec<String>]) -> Vec<ColumnType> {
             }
             let trimmed = field.trim();
             if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") || trimmed == "NA" {
-                continue; // nulls don't affect type inference
+                continue;
             }
 
             let field_type = if trimmed.eq_ignore_ascii_case("true")
@@ -79,11 +79,17 @@ fn infer_types(headers: &[String], rows: &[Vec<String>]) -> Vec<ColumnType> {
                 ColumnType::String
             };
 
-            types[i] = widen_type(types[i], field_type);
+            types[i] = Some(match types[i] {
+                None => field_type,
+                Some(current) => widen_type(current, field_type),
+            });
         }
     }
 
     types
+        .into_iter()
+        .map(|t| t.unwrap_or(ColumnType::String))
+        .collect()
 }
 
 /// Widen types: Integer < Float < String, Boolean stands alone
